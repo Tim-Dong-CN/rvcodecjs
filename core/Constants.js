@@ -71,6 +71,7 @@ export const FIELDS = {
 
   // R-type: FP specific fields
   r_fp_fmt: { pos: [26, 2], name: 'fmt' },
+  r_fp_rm:  { pos: [14, 3], name: 'rm' },
 
   // I-type
   i_imm_11_0: { pos: [31, 12], name: 'imm[11:0]' },
@@ -561,8 +562,8 @@ export const ISA_C = {
 
 // Integer Computational Instructions
   // Integer Constant-Generator Instructions
-  'c.li':       { isa: 'C', xlens: 0b111, fmt: 'CI-type', funct3: '010', rdRs1Mask: 0b10, rdRs1Excl: [0],                immBits: [[5],  [[4,0]]],   opcode: C_OPCODE.C1 },
-  'c.lui':      { isa: 'C', xlens: 0b111, fmt: 'CI-type', funct3: '011', rdRs1Mask: 0b10, rdRs1Excl: [0,2], nzimm: true, immBits: [[17], [[16,12]]], opcode: C_OPCODE.C1 },
+  'c.li':       { isa: 'C', xlens: 0b111, fmt: 'CI-type', funct3: '010', rdRs1Mask: 0b10, rdRs1Excl: [0],                immBits: [[5], [[4,0]]],                                   opcode: C_OPCODE.C1 },
+  'c.lui':      { isa: 'C', xlens: 0b111, fmt: 'CI-type', funct3: '011', rdRs1Mask: 0b10, rdRs1Excl: [0,2], nzimm: true, immBits: [[5], [[4,0]]], immBitsLabels: [[17], [[16,12]]], opcode: C_OPCODE.C1 },
 
   // Integer Register-Immediate Operations
   'c.addi':     { isa: 'C', xlens: 0b111, fmt: 'CI-type', funct3: '000', rdRs1Mask: 0b11, rdRs1Excl: [0], nzimm: true,             immBits: [[5], [[4,0]]],       opcode: C_OPCODE.C1 },
@@ -594,6 +595,16 @@ export const ISA_C = {
   'c.nop':    { isa: 'C', xlens: 0b111, fmt: 'CI-type', funct3: '000', rdRs1Mask: 0b00, rdRs1Val: 0, immVal: 0, immBits: [[5], [[4,0]]], opcode: C_OPCODE.C1 },
 
   'c.ebreak': { isa: 'C', xlens: 0b111, fmt: 'CR-type', funct4: '1001', rdRs1Mask: 0b00, rdRs1Val: 0, rs2Val: 0, opcode: C_OPCODE.C2 },
+}
+
+// Privileged instruction set
+export const ISA_Priv = {
+  // Trap-Return Instructions
+  sret: { isa: 'Priv', fmt: 'I-type', funct12: '000100000010', funct3: '000', opcode: OPCODE.SYSTEM },
+  mret: { isa: 'Priv', fmt: 'I-type', funct12: '001100000010', funct3: '000', opcode: OPCODE.SYSTEM },
+
+  // Interrupt-Management Instructions
+  wfi: { isa: 'Priv', fmt: 'I-type', funct12: '000100000101', funct3: '000', opcode: OPCODE.SYSTEM },
 }
 
 // ISA per opcode
@@ -709,7 +720,7 @@ export const ISA_BRANCH = {
   [ISA_RV32I['bne'].funct3]:  'bne',
   [ISA_RV32I['blt'].funct3]:  'blt',
   [ISA_RV32I['bge'].funct3]:  'bge',
-  [ISA_RV32I['bltu'].funct3]: 'btlu',
+  [ISA_RV32I['bltu'].funct3]: 'bltu',
   [ISA_RV32I['bgeu'].funct3]: 'bgeu',
 }
 
@@ -723,6 +734,9 @@ export const ISA_SYSTEM = {
   [ISA_RV32I['ecall'].funct3]: {
     [ISA_RV32I['ecall'].funct12]:   'ecall',
     [ISA_RV32I['ebreak'].funct12]:  'ebreak',
+    [ISA_Priv['sret'].funct12]:     'sret',
+    [ISA_Priv['mret'].funct12]:     'mret',
+    [ISA_Priv['wfi'].funct12]:      'wfi',
   },
   [ISA_Zicsr['csrrw'].funct3]:  'csrrw',
   [ISA_Zicsr['csrrs'].funct3]:  'csrrs',
@@ -1129,6 +1143,15 @@ export const FLOAT_REGISTER = {
   ft11: "f31",
 }
 
+export const FLOAT_ROUNDING_MODE = {
+  "rne": 0b000,
+  "rtz": 0b001,
+  "rdn": 0b010,
+  "rup": 0b011,
+  "rmm": 0b100,
+  "dyn": 0b111,
+}
+
 // CSR Encodings
 export const CSR = {
   cycle:          0xc00,
@@ -1459,10 +1482,28 @@ export const FRAG = {
   RS2: 8,
   RS3: 9,
   SUCC: 10,
+  FRM: 11,
 }
 
-// Entire ISA
+/* Flattened list of all the instructions */
 export const ISA = Object.assign({},
   ISA_RV32I, ISA_RV64I, ISA_RV128I,
   ISA_Zifencei, ISA_Zicsr,
-  ISA_M, ISA_A, ISA_F, ISA_D, ISA_Q, ISA_C);
+  ISA_M, ISA_A, ISA_F, ISA_D, ISA_Q, ISA_C,
+  ISA_Priv);
+
+  /* Hierarchy of instructions per ISA subset */
+export const ISA_Subsets = {
+  RV32I: ISA_RV32I,
+  RV64I: ISA_RV64I,
+  RV128I: ISA_RV128I,
+  Zifencei: ISA_Zifencei,
+  Zicsr: ISA_Zicsr,
+  M: ISA_M,
+  A: ISA_A,
+  F: ISA_F,
+  D: ISA_D,
+  Q: ISA_Q,
+  C: ISA_C,
+  Priv: ISA_Priv
+}

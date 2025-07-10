@@ -7,7 +7,7 @@
  */
 
 import { Instruction, convertRegToAbi } from "../core/Instruction.js";
-import { FRAG } from "../core/Constants.js";
+import { FRAG, ISA_Subsets} from "../core/Constants.js";
 import { configDefault, COPTS_ISA } from "../core/Config.js";
 import { buildSearchResults, clearSearchResults, renderSearchResults, iterateSearchResults, getSelectedMnemonic, buildPlaceholder, getPlaceholderString } from "./completion.js";
 
@@ -23,6 +23,7 @@ const fragColorMap = {
   [FRAG.RS2]: '--color-magenta',
   [FRAG.RS3]: '--color-blue',
   [FRAG.SUCC]: '--color-magenta',
+  [FRAG.FRM]: '--color-cyan',
 }
 
 /* Fast access to selected document elements */
@@ -36,10 +37,10 @@ const searchResults = document.getElementById('search-result-list');
  * Upon loading page or changing history, trigger conversion from hash paramters
  */
 let originalDocumentTitle = '';
-let titleSuffix = '';
+let titlePrefix = '';
 window.addEventListener('load', (e) => {
   originalDocumentTitle = document.title;
-  titleSuffix = ' - ' + originalDocumentTitle.split(' ')[0];
+  titlePrefix = originalDocumentTitle.split(' ')[0] + ' - ';
   hashChange(e.target.location.hash);
 });
 window.addEventListener('popstate', (e) => {
@@ -179,7 +180,7 @@ function runResult(addToHistory = true) {
   }
 
   // Set title
-  document.title = emptyQuery ? originalDocumentTitle : q + titleSuffix;
+  document.title = emptyQuery ? originalDocumentTitle : titlePrefix + q;
 
   // Reset UI and exit early if query is empty
   if (q === "") {
@@ -216,6 +217,15 @@ function renderConversion(inst, abi=false) {
   // Display format and ISA
   document.getElementById('fmt-data').innerText = inst.fmt;
   document.getElementById('isa-data').innerText = inst.isa;
+  const instName = inst.name;
+  const isa = inst.isa;
+  if (isa.startsWith('RV128') || isa.endsWith('Q')) {
+    document.getElementById('isa-url').innerText = `Not available`
+  } else {
+    document.getElementById('isa-url').innerHTML = `
+    <a href="//riscv-software-src.github.io/riscv-unified-db/manual/html/isa/isa_20240411/insts/${instName}.html" 
+    target="_blank">${instName}</a>`
+  }
 
   // Display assembly instruction
   let asmInst;
@@ -299,10 +309,11 @@ function renderConversion(inst, abi=false) {
 
   // Highlight feature
   let superHighlight = "yellow";
-  let subHighlight = "var(--color-hl)";
+  let subHighlight = "var(--color-fd)";
 
   // Handle tooltip highlight for binary fragment. Info label only appears when showLabel is set true
-  let tooltipBinaryDisplay = (binDiv, isDisplay, showLabel = false) => {
+  // Pass the event as parameter to detect the tooltip position on the screen using 'client'
+  let tooltipBinaryDisplay = (binDiv, isDisplay, showLabel = false, event = null) => {
     // Set the options based on isDisplay
     let visibility = (isDisplay && showLabel)?"visible":"hidden";
     let backgroundColor = (isDisplay)?((showLabel)?superHighlight:subHighlight):"inherit";
@@ -315,14 +326,23 @@ function renderConversion(inst, abi=false) {
         // Handle binary tooltip
         else if (child.classList.contains("binary-tooltip")) {
           child.style.visibility = visibility;
+
+          // If the binary tooltip is pointed, display the information at the cursor
+          if (visibility == "visible") {
+            const x = event.clientX + 10;
+            const y = event.clientY + 10;
+            child.style.left = x + "px";
+            child.style.top = y + "px";
+          }
         }
       }
     });
   }
 
-  let binDivMouseHandle = (binDiv, binDivList, isMouseOver, asmDiv = null) => {
+    // Pass the event as parameter to detect the tooltip position on the screen using 'client'
+  let binDivMouseHandle = (binDiv, binDivList, isMouseOver, asmDiv = null, event = null) => {
     // Super highlighted for binary div
-    tooltipBinaryDisplay(binDiv, isMouseOver, true);
+    tooltipBinaryDisplay(binDiv, isMouseOver, true, event);
 
     // Light highlighted for ASM div and other binary div
     if (asmDiv !== null)
@@ -331,7 +351,7 @@ function renderConversion(inst, abi=false) {
     for (let otherKey in binDivList) {
       let otherBinDiv = binDivList[otherKey];
       if (otherBinDiv !== binDiv) {
-        tooltipBinaryDisplay(otherBinDiv, isMouseOver, false);
+        tooltipBinaryDisplay(otherBinDiv, isMouseOver, false, event);
       }
     }
   }
@@ -354,7 +374,7 @@ function renderConversion(inst, abi=false) {
       delete binDivList[0];
 
       // Handle tooltip for ASM div
-      asmDiv.addEventListener("mouseover", () => {
+      asmDiv.addEventListener("mousemove", () => {
         tooltipAsmDisplay(asmDiv, true, true);
         // Only highlight binary bits, but not show info label
         for (let key in binDivList) {
@@ -375,12 +395,12 @@ function renderConversion(inst, abi=false) {
     // Handle tooltip for binary div
     for (let key in binDivList) {
       let binDiv = binDivList[key];
-      binDiv.addEventListener("mouseover", () => {        
-        binDivMouseHandle(binDiv, binDivList, true, asmDiv);
+      binDiv.addEventListener("mousemove", (event) => {
+        binDivMouseHandle(binDiv, binDivList, true, asmDiv, event);
       })
 
       // Remove highlight if hover out
-      binDiv.addEventListener("mouseout", () => {        
+      binDiv.addEventListener("mouseout", () => {
         binDivMouseHandle(binDiv, binDivList, false, asmDiv);
       });
     }
@@ -398,6 +418,21 @@ function renderConversion(inst, abi=false) {
     button.addEventListener("click", () => {
       navigator.clipboard.writeText(copyBtn[buttonId]);
     })
+  }
+
+  // Populate button function
+  let populateBtn = {
+    "asm-populate": inst.asm,
+    "binary-populate": binaryData,
+    "hex-populate": '0x' + inst.hex
+  }
+
+  for (let buttonId in populateBtn) {
+    let button = document.getElementById(buttonId);
+    button.addEventListener("click", () => {
+      input.value = populateBtn[buttonId];
+      input.focus(); // Pop up text cursor in the instruction input
+    });
   }
 }
 
@@ -422,7 +457,7 @@ function renderError(error) {
   errorTitle.textContent = 'Error = '
 
   let errorData = document.createElement('div')
-  errorData.classList.add('result-row');
+  errorData.id = "error-row";
   errorData.style.color = 'var(--color-red)';
   errorData.textContent = error;
 
@@ -493,3 +528,27 @@ window.addEventListener("click", (event) => {
     }
   }
 )
+
+// Add ISA to sidebar
+const isaSideBar = document.getElementById("isa-sets-container");
+for (let ISA_Type in ISA_Subsets) {
+  const isaSet = document.createElement("details");
+  const isaSetSummary = document.createElement("summary");
+  isaSetSummary.textContent = ISA_Type;
+  isaSetSummary.classList = "result-row-data";
+  isaSet.appendChild(isaSetSummary);
+
+  for (let inst in ISA_Subsets[ISA_Type]) {
+    const instNode = document.createElement("button");
+    instNode.textContent = inst;
+    instNode.classList = "asm-data asm-button";
+    instNode.onclick = ()=>{
+      input.value = inst;
+      runResult();
+    }
+    isaSet.appendChild(instNode);
+  }
+  
+  isaSideBar.appendChild(isaSet);
+}
+isaSideBar.style.display = 'initial';

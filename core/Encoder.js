@@ -6,7 +6,9 @@
  * Copyright (c) 2021-2022 LupLab @ UC Davis
  */
 
-import { BASE, XLEN_MASK, FIELDS, OPCODE, ISA, REGISTER, FLOAT_REGISTER, CSR } from './Constants.js'
+import { BASE, XLEN_MASK, FIELDS, OPCODE, ISA,
+  REGISTER, FLOAT_REGISTER, FLOAT_ROUNDING_MODE, CSR
+} from './Constants.js'
 
 import { COPTS_ISA } from './Config.js'
 
@@ -238,7 +240,10 @@ export class Encoder {
    */
   #encodeOP_FP() {
     // Get operands
-    const dest = this.#opr[0], src1 = this.#opr[1], src2 = this.#opr[2];
+    const dest = this.#opr[0],
+          src1 = this.#opr[1],
+          src2 = this.#opr[2],
+          frm  = this.#inst.rs2 !== undefined ? this.#opr[2] : this.#opr[3];
 
     // Convert to binary representation
     let floatRd = true;
@@ -254,10 +259,10 @@ export class Encoder {
     const rd = encReg(dest, floatRd),
       rs1 = encReg(src1, floatRs1),
       rs2 = this.#inst.rs2 ?? encReg(src2, true),
-      rm = this.#inst.funct3 ?? '111'; // funct3 or dynamic rounding mode
+      funct3 = this.#inst.funct3 ?? encFrm(frm) ?? '111' /* dyn rm */;
 
     // Construct binary instruction
-    this.bin = this.#inst.funct5 + this.#inst.fp_fmt + rs2 + rs1 + rm + rd +
+    this.bin = this.#inst.funct5 + this.#inst.fp_fmt + rs2 + rs1 + funct3 + rd +
       this.#inst.opcode;
   }
 
@@ -266,7 +271,7 @@ export class Encoder {
    */
   #encodeJALR() {
     // Get operands
-    const dest = this.#opr[0], base = this.#opr[1], offset = this.#opr[2];
+    const dest = this.#opr[0], offset = this.#opr[1], base = this.#opr[2];
 
     // Convert to binary representation
     const rd = encReg(dest), rs1 = encReg(base),
@@ -465,12 +470,8 @@ export class Encoder {
 
     // Convert to binary representation
     const rd = encReg(dest);
-    // U-type immediate value range requires 32 bits for initial binary representation
-    const imm = encImm(immediate, 32);
-
-    // Grab the upper 20 bits of the 32-bit encoded value
-    // - Lower 12 bits not encoded, inferred/forced to be 0s
-    const imm_31_12 = imm.substring(0, FIELDS.u_imm_31_12.pos[1]);
+    // Construct immediate field
+    const imm_31_12 = encImm(immediate, FIELDS.u_imm_31_12.pos[1]);
 
     // Construct binary instruction
     this.bin = imm_31_12 + rd + this.#inst.opcode;
@@ -538,15 +539,16 @@ export class Encoder {
   #encodeR4() {
     // Get operands
     const dest = this.#opr[0], src1 = this.#opr[1],
-      src2 = this.#opr[2], src3 = this.#opr[3];
+      src2 = this.#opr[2], src3 = this.#opr[3],
+      frm = this.#opr[4];
 
     // Convert to binary representation
     const rd = encReg(dest, true), rs1 = encReg(src1, true),
       rs2 = encReg(src2, true), rs3 = encReg(src3, true),
-      fmt = this.#inst.fp_fmt, rm = '111'; // dynamic rounding mode
+      fmt = this.#inst.fp_fmt, funct3 = encFrm(frm) ?? '111' /* dyn rm */;
 
     // Construct binary instruction
-    this.bin = rs3 + fmt + rs2 + rs1 + rm + rd +
+    this.bin = rs3 + fmt + rs2 + rs1 + funct3 + rd +
       this.#inst.opcode;
   }
 
@@ -896,11 +898,14 @@ function encRegPrime(reg, floatReg=false) {
 
 // Convert memory ordering to binary
 function encMem(input) {
-  let bits = '';
+  // Default input to 'iorw'
+  input = input ?? 'iorw';
 
   // I: Device input, O: device output, R: memory reads, W: memory writes
   const access = ['i', 'o', 'r', 'w'];
 
+  // Construct bits from input character flags
+  let bits = '';
   let one_count = 0;
   for (let i = 0; i < access.length; i++) {
     if (input.includes(access[i])) {
@@ -921,7 +926,8 @@ function encMem(input) {
 // Convert CSR (name or imm) to binary
 function encCSR(csr) {
   // Attempt to find CSR value from CSR name map
-  let csrVal = CSR[csr];
+  // - If `csr` is undefined, default to `cycle`
+  let csrVal = CSR[csr ?? 'cycle'];
 
   // If failed, attempt to parse as immediate
   if (csrVal === undefined) {
@@ -934,4 +940,18 @@ function encCSR(csr) {
   }
 
   return encImm(csrVal, FIELDS.i_csr.pos[1]);
+}
+
+// Convert float rounding mode name to binary
+function encFrm(frm) {
+  // Default input to 'dyn'
+  frm = frm ?? 'dyn';
+
+  // Lookup name in frm table
+  const frmVal = FLOAT_ROUNDING_MODE[frm];
+  if (frmVal === undefined) {
+    throw `Invalid float rounding mode field '${frm}'`
+  }
+
+  return encImm(frmVal, FIELDS.r_fp_rm.pos[1]);
 }

@@ -55,7 +55,7 @@ export const CANONICAL_OPERANDS_BY_OPCODE = {
   [OPCODE.LUI]:       'rd, imm',
   [OPCODE.BRANCH]:    'rs1, rs2, offset',
   [OPCODE.JAL]:       'rd, offset',
-  [OPCODE.JALR]:      'rd, rs1, offset',
+  [OPCODE.JALR]:      'rd, offset(rs1)',
   [OPCODE.OP]:        'rd, rs1, rs2',
   [OPCODE.OP_32]:     'rd, rs1, rs2',
   [OPCODE.OP_64]:     'rd, rs1, rs2',
@@ -77,8 +77,9 @@ export const CANONICAL_OPERANDS_BY_OPCODE = {
 
 // Instruction mnemonic regex paird with canonical operand strings
 const CANONICAL_OPERANDS_EXCEPTIONS_REGEX = [
-  [/^lq$/,                   'rd, offset(rs1)'],
+  [/^lq/,                    'rd, offset(rs1)'],
   [/^lr\./,                  'rd, (rs1)'],
+  [/^csr.*i/,                'rd, csr, uimm'],
   [/^csr/,                   'rd, csr, rs1'],
   [/^fence\.i/,              ''],
   [/^fsqrt\./,               'frd, frs1'],
@@ -147,7 +148,7 @@ const CANONICAL_OPERANDS_C_INSTRUCTIONS = {
 export const CANONICAL_OPERANDS = (() => {
   let canonOprs = {};
 
-  const cRegex = /c\./;
+  const cRegex = /^c\./;
   for (const [mne, inst] of Object.entries(ISA)) {
     if (cRegex.test(mne)) {
       // C Instruction, skip and then just combine with dedicated object
